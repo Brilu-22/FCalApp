@@ -1,11 +1,10 @@
-// MyFitnessBackend/Controllers/ApiController.cs
 using Microsoft.AspNetCore.Mvc;
 using MyFitnessBackend.Models;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
-using Microsoft.Extensions.Configuration;
+using System.Text.Json.Serialization; // Make sure this is included for JsonIgnoreCondition
+using Microsoft.Extensions.Configuration; // Make sure this is included
 
 namespace MyFitnessBackend.Controllers
 {
@@ -18,6 +17,7 @@ namespace MyFitnessBackend.Controllers
         private readonly string? _geminiApiKey;
         private readonly string? _edamamAppId;
         private readonly string? _edamamAppKey;
+        private readonly string? _gcpProjectId; // Added for clarity, though _configuration["GCPProjectID"] also works
 
         public ApiController(IHttpClientFactory httpClientFactory, IConfiguration configuration)
         {
@@ -27,10 +27,11 @@ namespace MyFitnessBackend.Controllers
             _geminiApiKey = _configuration["ApiKeys:Gemini"];
             _edamamAppId = _configuration["ApiKeys:EdamamAppId"];
             _edamamAppKey = _configuration["ApiKeys:EdamamAppKey"];
+            _gcpProjectId = _configuration["GCPProjectID"]; // Assign GCP Project ID
 
-            if (string.IsNullOrEmpty(_geminiApiKey) || string.IsNullOrEmpty(_edamamAppId) || string.IsNullOrEmpty(_edamamAppKey))
+            if (string.IsNullOrEmpty(_geminiApiKey) || string.IsNullOrEmpty(_edamamAppId) || string.IsNullOrEmpty(_edamamAppKey) || string.IsNullOrEmpty(_gcpProjectId))
             {
-                Console.WriteLine("WARNING: One or more API keys are missing in configuration. Check appsettings.json or environment variables.");
+                Console.WriteLine("WARNING: One or more API keys or GCP Project ID are missing in configuration. Check appsettings.json or environment variables.");
             }
         }
 
@@ -46,11 +47,19 @@ namespace MyFitnessBackend.Controllers
             {
                 return StatusCode(503, "Gemini API key is not configured on the backend.");
             }
+            // No need to check _gcpProjectId here, as it's not used in this specific Gemini API endpoint URL anymore
 
             try
             {
                 var httpClient = _httpClientFactory.CreateClient();
-                var geminiApiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={_geminiApiKey}";
+
+                // *** CORRECTED GEMINI API URL WITH THE FOUND MODEL NAME ***
+                // Use a model from your ListModels output that supports "generateContent"
+                // "models/gemini-2.5-pro" is a good stable choice.
+                var geminiApiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key={_geminiApiKey}";
+                // If you prefer a "flash" model for speed:
+                // var geminiApiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={_geminiApiKey}";
+
                 var geminiRequestPayload = new
                 {
                     contents = new[] { new { parts = new[] { new { text = request.Prompt } } } }
@@ -73,12 +82,26 @@ namespace MyFitnessBackend.Controllers
                     return StatusCode((int)geminiResponse.StatusCode, $"Gemini API returned an error: {responseBody}");
                 }
 
-                var geminiApiResponse = JsonSerializer.Deserialize<GeminiApiResponse>(responseBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                GeminiApiResponse? geminiApiResponse = null;
+                try
+                {
+                    // Attempt to deserialize the successful response
+                    geminiApiResponse = JsonSerializer.Deserialize<GeminiApiResponse>(responseBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                }
+                catch (JsonException ex)
+                {
+                    Console.WriteLine($"JSON Deserialization error from successful Gemini response: {ex.Message}. Response Body: {responseBody}");
+                    return StatusCode(500, $"Failed to parse successful Gemini API response: {ex.Message}");
+                }
+
+
                 var aiTextResponse = geminiApiResponse?.Candidates?.FirstOrDefault()?.Content?.Parts?.FirstOrDefault()?.Text;
 
                 if (string.IsNullOrEmpty(aiTextResponse))
                 {
-                    return StatusCode(500, "Could not extract AI response text from Gemini.");
+                    // This could happen if Gemini didn't provide a text part, but no error status
+                    Console.WriteLine($"Gemini API returned success, but no text was extracted. Response Body: {responseBody}");
+                    return StatusCode(500, "Could not extract AI response text from Gemini. Response might be empty or malformed.");
                 }
 
                 return Ok(new { aiResponse = aiTextResponse });
@@ -88,11 +111,7 @@ namespace MyFitnessBackend.Controllers
                 Console.WriteLine($"Gemini API HTTP error: {ex.Message}");
                 return StatusCode(502, $"Error calling Gemini API: {ex.Message}");
             }
-            catch (JsonException ex)
-            {
-                Console.WriteLine($"JSON Deserialization error from Gemini: {ex.Message}");
-                return StatusCode(500, $"Failed to process Gemini API response: {ex.Message}");
-            }
+            // Removed general JsonException here, as it's now handled specifically for successful responses.
             catch (Exception ex)
             {
                 Console.WriteLine($"An unexpected error occurred in GenerateAiPlan: {ex.Message}");
