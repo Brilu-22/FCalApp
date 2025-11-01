@@ -51,7 +51,6 @@ namespace MyFitnessBackend.Controllers
             {
                 var httpClient = _httpClientFactory.CreateClient();
                 var geminiApiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={_geminiApiKey}";
-
                 var geminiRequestPayload = new
                 {
                     contents = new[] { new { parts = new[] { new { text = request.Prompt } } } }
