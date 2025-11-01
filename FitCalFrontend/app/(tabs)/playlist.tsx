@@ -141,7 +141,7 @@ export default function PlaylistScreen() {
             <Ionicons name="musical-notes-outline" size={40} color={Colors.secondaryText} />
             <Text style={styles.noPlaylistsText}>No playlists found.</Text>
             <Text style={styles.smallText}>Generate a new workout plan to get music suggestions!</Text>
-            <TouchableOpacity style={styles.generatePlanButton} onPress={() => router.push('/workouts')}>
+            <TouchableOpacity style={styles.generatePlanButton} onPress={() => router.push('./workouts')}>
               <Text style={styles.generatePlanButtonText}>Generate Plan</Text>
             </TouchableOpacity>
           </Card>

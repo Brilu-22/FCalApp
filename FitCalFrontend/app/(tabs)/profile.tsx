@@ -99,7 +99,7 @@ export default function ProfileScreen() {
       await signOut(auth);
       Alert.alert('Logged Out', 'You have been logged out successfully.');
       // THIS IS THE CRUCIAL LINE FOR REDIRECTION
-      router.replace('/login'); // Redirect to login screen after logout
+      router.replace('./login'); // Redirect to login screen after logout
     } catch (error: any) {
       console.error("Logout error:", error);
       Alert.alert('Logout Failed', error.message);
