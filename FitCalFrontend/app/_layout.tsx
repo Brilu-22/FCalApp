@@ -1,6 +1,6 @@
 // FitzFrontend/app/_layout.tsx
-import React, { useEffect, useState } from 'react';
-import { SplashScreen, Stack, useRouter, useSegments, Slot } from 'expo-router'; // Added Slot
+import React, { useEffect, useState, useContext } from 'react'; // Added useContext
+import { SplashScreen, Stack, useRouter, useSegments, Slot } from 'expo-router';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
 import { Colors } from '../constants/Colours';
@@ -9,25 +9,52 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 SplashScreen.preventAutoHideAsync();
 
+// Define the shape of our authentication state
+interface AuthState {
+  displayName: any;
+  email: any;
+  photoURL: string;
+  user: User | null;
+  isLoading: boolean; // Indicates if the initial auth check is still in progress
+}
+
 // Custom hook to provide user state
-const AuthContext = React.createContext<User | null | undefined>(undefined);
-export const useUser = () => React.useContext(AuthContext);
+const AuthContext = React.createContext<AuthState | undefined>(undefined);
+
+export const useUser = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useUser must be used within an AuthContext.Provider');
+  }
+  return context;
+};
 
 export default function RootLayout() {
-  const [user, setUser] = useState<User | null | undefined>(undefined);
-  const [appReady, setAppReady] = useState(false);
+  // Use AuthState type for initial state
+  const [authState, setAuthState] = useState<AuthState>({
+    user: null,
+    isLoading: true,
+    displayName: null,
+    email: null,
+    photoURL: '',
+  });
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-      setAppReady(true);
+      setAuthState({
+        user: firebaseUser,
+        isLoading: false,
+        displayName: firebaseUser?.displayName ?? null,
+        email: firebaseUser?.email ?? null,
+        photoURL: firebaseUser?.photoURL ?? '',
+      });
       SplashScreen.hideAsync();
     });
 
     return () => unsubscribe();
   }, []);
 
-  if (!appReady) {
+  if (authState.isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background }}>
         <ActivityIndicator size="large" color={Colors.accent} />
@@ -39,25 +66,25 @@ export default function RootLayout() {
   const ConditionalRootNavigator = () => {
     const segments = useSegments();
     const router = useRouter();
+    const { user } = useUser(); // Get user from context
 
     useEffect(() => {
-      // Check if user is null (unauthenticated) AND we are NOT in the (auth) group
-      if (user === null && segments[0] !== 'auth') {
-        router.replace('/auth/login');
-      }
-      // Check if user is logged in AND we are NOT in the (tabs) group
-      else if (user && segments[0] !== '(tabs)') {
+      const inAuthGroup = String(segments[0]) === 'auth';
+      const inTabsGroup = segments[0] === '(tabs)';
+
+      if (!user && !inAuthGroup) {
+        // User is not logged in AND not currently in the /auth group, redirect to login
+        router.replace('./auth/login');
+      } else if (user && !inTabsGroup) {
+        // User is logged in AND not currently in the /(tabs) group, redirect to home
         router.replace('/(tabs)');
       }
+      // If user is logged in and in tabs, or not logged in and in auth, do nothing (stay put).
     }, [user, segments, router]);
 
-    // Render a Slot here. This Slot will render the active route group ((auth) or (tabs))
-    // based on the router.replace() calls above.
     return (
       <Stack screenOptions={{ headerShown: false }}>
         {/*
-          The InitialRedirect logic is now integrated directly into this component.
-          We don't need explicit Stack.Screen for (auth) or (tabs) here.
           The Slot will automatically render the correct route based on the URL.
         */}
         <Slot />
@@ -68,7 +95,7 @@ export default function RootLayout() {
   };
 
   return (
-    <AuthContext.Provider value={user}>
+    <AuthContext.Provider value={authState}>
       <SafeAreaProvider>
         <ConditionalRootNavigator />
       </SafeAreaProvider>
