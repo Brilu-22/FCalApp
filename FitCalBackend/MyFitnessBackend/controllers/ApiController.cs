@@ -62,6 +62,10 @@ namespace MyFitnessBackend.Controllers
             try
             {
                 var httpClient = _httpClientFactory.CreateClient();
+                // --- SETTING HTTP CLIENT TIMEOUT HERE ---
+                httpClient.Timeout = TimeSpan.FromMinutes(5); // Set a 5-minute timeout for the Gemini API call
+                // ----------------------------------------
+
                 // This is the working endpoint for gemini-2.5-pro on the Generative Language API
                 var geminiApiUrl = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key={_geminiApiKey}";
 
