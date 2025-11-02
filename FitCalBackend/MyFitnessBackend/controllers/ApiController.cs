@@ -172,7 +172,9 @@ Please present the plan clearly, separated into a 'Workout Plan' and a 'Meal Pla
                 // Edamam Nutrition Analysis API endpoint
                 var edamamApiUrl = $"https://api.edamam.com/api/nutrition-details?app_id={_edamamAppId}&app_key={_edamamAppKey}";
 
-                var edamamRequestPayload = new { ingredients = request.Ingredients };
+                // --- THIS IS THE CHANGE ---
+                var edamamRequestPayload = new { ingr = request.Ingredients }; // Change 'ingredients' to 'ingr'
+                // --------------------------
 
                 var content = new StringContent(
                     JsonSerializer.Serialize(edamamRequestPayload),
