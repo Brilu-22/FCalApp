@@ -1,5 +1,5 @@
 // FitzFrontend/app/_layout.tsx
-import React, { useEffect, useState, useContext } from 'react'; // Added useContext
+import React, { useEffect, useState, useContext } from 'react';
 import { SplashScreen, Stack, useRouter, useSegments, Slot } from 'expo-router';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
@@ -11,12 +11,10 @@ SplashScreen.preventAutoHideAsync();
 
 // Define the shape of our authentication state
 interface AuthState {
-  targetWeight: any;
-  currentWeight // Use AuthState type for initial state
-    (currentWeight: any): string | (() => string);
-  currentWeight: any;
-  displayName: any;
-  email: any;
+  targetWeight: number | null; // Assuming number, use 'any' if unsure
+  currentWeight: number | null; // Assuming number, use 'any' if unsure
+  displayName: string | null;
+  email: string | null;
   photoURL: string;
   user: User | null;
   isLoading: boolean; // Indicates if the initial auth check is still in progress
@@ -34,24 +32,28 @@ export const useUser = () => {
 };
 
 export default function RootLayout() {
-  // Use AuthState type for initial state
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     isLoading: true,
     displayName: null,
     email: null,
     photoURL: '',
+    targetWeight: null, // Initialized
+    currentWeight: null, // Initialized
   });
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setAuthState({
+      setAuthState((prevState) => ({ // Use functional update to ensure latest state
+        ...prevState, // Keep existing targetWeight and currentWeight unless updated here
         user: firebaseUser,
         isLoading: false,
         displayName: firebaseUser?.displayName ?? null,
         email: firebaseUser?.email ?? null,
         photoURL: firebaseUser?.photoURL ?? '',
-      });
+        // If targetWeight/currentWeight should be reset or fetched with user,
+        // you'd do it here. For now, they persist or stay null if not set.
+      }));
       SplashScreen.hideAsync();
     });
 
