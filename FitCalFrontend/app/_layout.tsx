@@ -11,6 +11,10 @@ SplashScreen.preventAutoHideAsync();
 
 // Define the shape of our authentication state
 interface AuthState {
+  targetWeight: any;
+  currentWeight // Use AuthState type for initial state
+    (currentWeight: any): string | (() => string);
+  currentWeight: any;
   displayName: any;
   email: any;
   photoURL: string;
