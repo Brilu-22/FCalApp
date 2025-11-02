@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, Image, TouchableOpacity, Alert, ActivityIndicator, TextInput } from 'react-native';
 import { Colors } from '../../constants/Colours';
 import Card from '../../components/Card';
@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { auth, db } from '../../firebaseConfig';
 import { signOut, User } from 'firebase/auth';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { router } from 'expo-router'; // Make sure router is imported
+import { router, useFocusEffect } from 'expo-router'; // Make sure router and useFocusEffect are imported
 
 // Define the UserData interface based on your Firestore structure
 interface UserData {
@@ -14,21 +14,24 @@ interface UserData {
   email: string;
   profileImageUrl?: string;
   targetWeight: number | null;
-  currentWeight: number | null;
+  currentWeight: number | null; // Added currentWeight to UserData
 }
 
 export default function ProfileScreen() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [targetWeightInput, setTargetWeightInput] = useState<string>('');
+  const [currentWeightInput, setCurrentWeightInput] = useState<string>(''); // New state for current weight input
   const [loading, setLoading] = useState<boolean>(true);
-  const [saving, setSaving] = useState<boolean>(false);
+  const [savingTarget, setSavingTarget] = useState<boolean>(false);
+  const [savingCurrent, setSavingCurrent] = useState<boolean>(false);
+
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(user => {
       setCurrentUser(user);
       if (user) {
-        fetchUserData(user.uid);
+        // userFocusEffect will handle fetching data when screen is focused
       } else {
         setUserData(null);
         setLoading(false);
@@ -37,7 +40,8 @@ export default function ProfileScreen() {
     return () => unsubscribe();
   }, []);
 
-  const fetchUserData = async (uid: string) => {
+  const fetchUserData = useCallback(async (uid: string) => {
+    setLoading(true);
     try {
       const userDocRef = doc(db, 'users', uid);
       const userDocSnap = await getDoc(userDocRef);
@@ -45,8 +49,10 @@ export default function ProfileScreen() {
         const data = userDocSnap.data() as UserData;
         setUserData(data);
         setTargetWeightInput(data.targetWeight ? String(data.targetWeight) : '');
+        setCurrentWeightInput(data.currentWeight ? String(data.currentWeight) : ''); // Populate current weight input
       } else {
         console.log("No user data found in Firestore for this UID.");
+        // Initialize with default values if no Firestore doc exists
         setUserData({
           name: currentUser?.displayName || 'Guest User',
           email: currentUser?.email || 'N/A',
@@ -55,6 +61,7 @@ export default function ProfileScreen() {
           currentWeight: null
         });
         setTargetWeightInput('');
+        setCurrentWeightInput('');
       }
     } catch (error: any) {
       console.error('Error fetching user data:', error);
@@ -62,19 +69,30 @@ export default function ProfileScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser]); // Include currentUser in dependencies
+
+  useFocusEffect(
+    useCallback(() => {
+      if (currentUser) {
+        fetchUserData(currentUser.uid);
+      }
+      return () => {
+        // Optional: cleanup or reset states when screen blurs
+      };
+    }, [currentUser, fetchUserData])
+  );
 
   const handleSaveTargetWeight = async () => {
     if (!currentUser) {
       Alert.alert('Error', 'You must be logged in to save weight.');
       return;
     }
-    setSaving(true);
+    setSavingTarget(true);
     try {
       const weight = parseFloat(targetWeightInput);
       if (isNaN(weight) || weight <= 0) {
         Alert.alert('Invalid Input', 'Please enter a valid target weight.');
-        setSaving(false);
+        setSavingTarget(false);
         return;
       }
 
@@ -89,16 +107,44 @@ export default function ProfileScreen() {
       console.error('Error saving target weight:', error.message);
       Alert.alert('Error', 'Failed to save target weight.');
     } finally {
-      setSaving(false);
+      setSavingTarget(false);
+    }
+  };
+
+  const handleSaveCurrentWeight = async () => {
+    if (!currentUser) {
+      Alert.alert('Error', 'You must be logged in to save weight.');
+      return;
+    }
+    setSavingCurrent(true);
+    try {
+      const weight = parseFloat(currentWeightInput);
+      if (isNaN(weight) || weight <= 0) {
+        Alert.alert('Invalid Input', 'Please enter a valid current weight.');
+        setSavingCurrent(false);
+        return;
+      }
+
+      const userDocRef = doc(db, 'users', currentUser.uid);
+      await updateDoc(userDocRef, {
+        currentWeight: weight,
+        lastUpdated: new Date().toISOString(),
+      });
+      setUserData(prev => prev ? { ...prev, currentWeight: weight } : null);
+      Alert.alert('Success', 'Current weight saved!');
+    } catch (error: any) {
+      console.error('Error saving current weight:', error.message);
+      Alert.alert('Error', 'Failed to save current weight.');
+    } finally {
+      setSavingCurrent(false);
     }
   };
 
   const handleLogout = async () => {
-    setLoading(true);
+    setLoading(true); // Show loading while logging out
     try {
       await signOut(auth);
       Alert.alert('Logged Out', 'You have been logged out successfully.');
-      // THIS IS THE CRUCIAL LINE FOR REDIRECTION
       router.replace('./login'); // Redirect to login screen after logout
     } catch (error: any) {
       console.error("Logout error:", error);
@@ -108,7 +154,6 @@ export default function ProfileScreen() {
     }
   };
 
-  // ... (rest of your component and styles remain the same) ...
   if (loading) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -169,6 +214,26 @@ export default function ProfileScreen() {
 
           <View style={styles.lineBreak} />
 
+          {/* New Input for Current Weight */}
+          <Text style={styles.inputLabel}>Update Current Weight:</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g., 80"
+            placeholderTextColor={Colors.secondaryText}
+            keyboardType="numeric"
+            value={currentWeightInput}
+            onChangeText={setCurrentWeightInput}
+          />
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveCurrentWeight} disabled={savingCurrent}>
+            {savingCurrent ? (
+              <ActivityIndicator color={Colors.primaryText} />
+            ) : (
+              <Text style={styles.buttonText}>Save Current Weight</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.lineBreak} />
+
           <Text style={styles.inputLabel}>Update Target Weight:</Text>
           <TextInput
             style={styles.input}
@@ -178,8 +243,8 @@ export default function ProfileScreen() {
             value={targetWeightInput}
             onChangeText={setTargetWeightInput}
           />
-          <TouchableOpacity style={styles.saveButton} onPress={handleSaveTargetWeight} disabled={saving}>
-            {saving ? (
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveTargetWeight} disabled={savingTarget}>
+            {savingTarget ? (
               <ActivityIndicator color={Colors.primaryText} />
             ) : (
               <Text style={styles.buttonText}>Save Target Weight</Text>
