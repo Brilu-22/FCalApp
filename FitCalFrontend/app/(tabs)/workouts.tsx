@@ -1,60 +1,200 @@
 // FitzFrontend/app/(tabs)/workouts.tsx
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Image, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Image, Alert, ActivityIndicator, TextInput } from 'react-native';
 import { Colors } from '../../constants/Colours';
 import Card from '../../components/Card';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useUser } from '../_layout'; // Import useUser to get current/target weight
+import AsyncStorage from '@react-native-async-storage/async-storage'; // To store the generated plan
 
-// You'll need an image of a human silhouette.
-// For demonstration, I'll use a placeholder. In a real app,
-// you might have an SVG or a transparent PNG, and use absolute positioning
-// or a library like react-native-image-mapper to create interactive zones.
-// For simplicity, I'll just represent clickable areas.
+// Backend API URL
+const API_BASE_URL = 'http://localhost:5089/api'; 
+
 const humanSilhouetteImage = 'https://via.placeholder.com/300x500/0D0D0D/FFFFFF?text=Human+Anatomy'; // Placeholder
 
 export default function WorkoutsScreen() {
+  const user = useUser(); // Get user data from context
   const [selectedBodyPart, setSelectedBodyPart] = useState<string | null>(null);
+
+  // State for AI Plan Generation Inputs
+  const [currentWeight, setCurrentWeight] = useState<string>(user?.currentWeight ? String(user.currentWeight) : '');
+  const [targetWeight, setTargetWeight] = useState<string>(user?.targetWeight ? String(user.targetWeight) : '');
+  const [workoutDuration, setWorkoutDuration] = useState<string>('45'); // Default 45 mins
+  const [daysPerWeek, setDaysPerWeek] = useState<string>('5'); // Default 5 days
+  const [prompt, setPrompt] = useState<string>(''); // Optional additional prompt
+  const [generatingPlan, setGeneratingPlan] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Update weights if user data changes
+    if (user) {
+      if (user.currentWeight && String(user.currentWeight) !== currentWeight) {
+        setCurrentWeight(String(user.currentWeight));
+      }
+      if (user.targetWeight && String(user.targetWeight) !== targetWeight) {
+        setTargetWeight(String(user.targetWeight));
+      }
+    }
+  }, [user]);
 
   const handleBodyPartSelect = (bodyPart: string) => {
     setSelectedBodyPart(bodyPart);
-    Alert.alert(`Selected: ${bodyPart}`, `You've selected to focus on ${bodyPart}. We can now filter exercises or suggest a plan.`);
-    // In a real app, you'd navigate or filter a list of exercises here
+    // You can also use this to pre-fill the prompt or suggest workouts
+    // For now, we'll just alert.
+    Alert.alert(`Selected: ${bodyPart}`, `You've selected to focus on ${bodyPart}. This can be used to customize your AI plan.`);
   };
+
+  const generateAiPlan = async () => {
+    if (!currentWeight || !targetWeight || !workoutDuration || !daysPerWeek) {
+      Alert.alert('Missing Info', 'Please fill in all required fields for plan generation.');
+      return;
+    }
+
+    const currentWeightKg = parseFloat(currentWeight);
+    const targetWeightKg = parseFloat(targetWeight);
+    const workoutDurationMinutes = parseInt(workoutDuration);
+    const daysPerWeekInt = parseInt(daysPerWeek);
+
+    if (isNaN(currentWeightKg) || currentWeightKg <= 0 ||
+        isNaN(targetWeightKg) || targetWeightKg <= 0 ||
+        isNaN(workoutDurationMinutes) || workoutDurationMinutes <= 0 ||
+        isNaN(daysPerWeekInt) || daysPerWeekInt <= 0) {
+      Alert.alert('Invalid Input', 'Please enter valid positive numbers for all fields.');
+      return;
+    }
+
+    setGeneratingPlan(true);
+    try {
+      const requestBody = {
+        currentWeightKg,
+        targetWeightKg,
+        workoutDurationMinutes,
+        daysPerWeek: daysPerWeekInt,
+        prompt: prompt, // Include optional prompt
+      };
+
+      const response = await fetch(`${API_BASE_URL}/generate_ai_plan`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        Alert.alert('Error Generating Plan', data.aiResponse || data.message || 'An unknown error occurred.');
+        console.error('Backend error:', data);
+        return;
+      }
+
+      const aiResponseText = data.aiResponse;
+      if (aiResponseText) {
+        Alert.alert('Plan Generated!', 'Your new fitness and dietary plan has been successfully generated!');
+        // Store the raw text and parameters in AsyncStorage
+        await AsyncStorage.setItem('lastGeneratedDietPlan', JSON.stringify({ text: aiResponseText, params: requestBody }));
+        router.push('/dietary-plan'); // Navigate to the dietary plan tab to show the new plan
+      } else {
+        Alert.alert('No Plan Received', 'The AI generated a response, but no plan text could be extracted.');
+      }
+
+    } catch (error: any) {
+      console.error('Network or parsing error:', error);
+      Alert.alert('Connection Error', `Failed to connect to the backend or process response: ${error.message}`);
+    } finally {
+      setGeneratingPlan(false);
+    }
+  };
+
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container}>
-        <Text style={styles.header}>Workouts</Text>
+        <Text style={styles.header}>Workouts & Plans</Text>
 
-        {/* Current Workout/Plan Card */}
+        {/* Current Workout/Plan Card (could display a summary of the AI plan) */}
         <Card>
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Current Plan</Text>
-            <TouchableOpacity style={styles.editButton}>
-              <Ionicons name="ellipsis-horizontal" size={20} color={Colors.accent} />
+            <Text style={styles.cardTitle}>Current Plan Summary</Text>
+            <TouchableOpacity style={styles.editButton} onPress={() => router.push('/dietary-plan')}>
+              <Ionicons name="eye-outline" size={20} color={Colors.accent} />
             </TouchableOpacity>
           </View>
-          <Text style={styles.workoutName}>Full Body Strength</Text>
-          <Text style={styles.secondaryText}>3 days/week | Moderate Intensity</Text>
-          <View style={styles.lineBreak} />
-          <View style={styles.workoutStatsRow}>
-            <View style={styles.workoutStatItem}>
-              <Text style={styles.statNumber}>1</Text>
-              <Text style={styles.smallText}>completed</Text>
-            </View>
-            <View style={styles.workoutStatItem}>
-              <Text style={styles.statNumber}>3</Text>
-              <Text style={styles.smallText}>remaining</Text>
-            </View>
-            <View style={styles.workoutStatItem}>
-              <Text style={styles.statNumber}>2</Text>
-              <Text style={styles.smallText}>weeks left</Text>
-            </View>
-          </View>
+          <Text style={styles.workoutName}>Your AI Generated Plan</Text>
+          <Text style={styles.secondaryText}>Tap "View Full Plan" to see details.</Text>
+          <TouchableOpacity style={styles.seeAllButton} onPress={() => router.push('/dietary-plan')}>
+            <Text style={styles.seeAllButtonText}>View Full Plan</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.accent} />
+          </TouchableOpacity>
         </Card>
 
-        {/* Human Anatomy Silhouette for Selection */}
+        {/* Generate AI Plan Card */}
+        <Card>
+          <Text style={styles.cardTitle}>Generate Personalized AI Plan</Text>
+          <Text style={styles.inputLabel}>Current Weight (kg):</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g., 70"
+            placeholderTextColor={Colors.secondaryText}
+            keyboardType="numeric"
+            value={currentWeight}
+            onChangeText={setCurrentWeight}
+          />
+          <Text style={styles.inputLabel}>Target Weight (kg):</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g., 65"
+            placeholderTextColor={Colors.secondaryText}
+            keyboardType="numeric"
+            value={targetWeight}
+            onChangeText={setTargetWeight}
+          />
+          <Text style={styles.inputLabel}>Workout Duration (minutes per session):</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g., 45"
+            placeholderTextColor={Colors.secondaryText}
+            keyboardType="numeric"
+            value={workoutDuration}
+            onChangeText={setWorkoutDuration}
+          />
+          <Text style={styles.inputLabel}>Days to workout per week:</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g., 5"
+            placeholderTextColor={Colors.secondaryText}
+            keyboardType="numeric"
+            value={daysPerWeek}
+            onChangeText={setDaysPerWeek}
+          />
+          <Text style={styles.inputLabel}>Additional Prompt (optional):</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder="e.g., 'Focus on strength training, low impact activities'"
+            placeholderTextColor={Colors.secondaryText}
+            multiline
+            numberOfLines={4}
+            value={prompt}
+            onChangeText={setPrompt}
+          />
+          <TouchableOpacity
+            style={[styles.generateNewPlanButton, generatingPlan && styles.generateNewPlanButtonDisabled]}
+            onPress={generateAiPlan}
+            disabled={generatingPlan}
+          >
+            {generatingPlan ? (
+              <ActivityIndicator color={Colors.primaryText} />
+            ) : (
+              <>
+                <Ionicons name="sparkles-outline" size={24} color={Colors.primaryText} />
+                <Text style={styles.generateNewPlanButtonText}>Generate AI Plan</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </Card>
+
+        {/* Human Anatomy Silhouette for Selection (Kept for visual appeal/future use) */}
         <Card style={styles.anatomyCard}>
           <Text style={styles.cardTitle}>Select Body Part to Exercise</Text>
           <View style={styles.silhouetteContainer}>
@@ -94,7 +234,7 @@ export default function WorkoutsScreen() {
           )}
         </Card>
 
-        {/* Workout History/Calendar Card */}
+        {/* Workout History/Calendar Card (Can be populated from generated plans or logged workouts) */}
         <Card>
           <Text style={styles.cardTitle}>History</Text>
           <View style={styles.historyItem}>
@@ -110,12 +250,6 @@ export default function WorkoutsScreen() {
             <Ionicons name="chevron-forward" size={16} color={Colors.accent} />
           </TouchableOpacity>
         </Card>
-
-        {/* Generate New Plan Button */}
-        <TouchableOpacity style={styles.generatePlanButton}>
-          <Ionicons name="add-circle-outline" size={24} color={Colors.primaryText} />
-          <Text style={styles.generatePlanButtonText}>Generate New Plan</Text>
-        </TouchableOpacity>
 
       </ScrollView>
     </SafeAreaView>
@@ -214,17 +348,20 @@ const styles = StyleSheet.create({
     marginRight: 4,
     fontSize: 16,
   },
-  generatePlanButton: {
-    backgroundColor: Colors.card,
+  generateNewPlanButton: {
+    backgroundColor: Colors.accent,
     borderRadius: 12,
     padding: 16,
     marginVertical: 8,
-    marginHorizontal: 16,
+    // marginHorizontal: 16, // Already handled by Card padding
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  generatePlanButtonText: {
+  generateNewPlanButtonDisabled: {
+    backgroundColor: Colors.border, // Dimmed color when disabled
+  },
+  generateNewPlanButtonText: {
     color: Colors.primaryText,
     fontSize: 18,
     fontWeight: '600',
@@ -277,4 +414,25 @@ const styles = StyleSheet.create({
     color: Colors.primaryText,
     fontWeight: 'bold',
   },
+  inputLabel: {
+    fontSize: 16,
+    color: Colors.primaryText,
+    marginBottom: 8,
+    marginTop: 15,
+  },
+  input: {
+    width: '100%',
+    backgroundColor: Colors.background,
+    borderRadius: 10,
+    padding: 15,
+    fontSize: 16,
+    color: Colors.primaryText,
+    marginBottom: 5, // Less margin for stacked inputs
+    borderColor: Colors.border,
+    borderWidth: 1,
+  },
+  textArea: {
+    height: 100, // Make multiline input taller
+    textAlignVertical: 'top', // Aligns text to the top
+  }
 });
