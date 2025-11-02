@@ -1,6 +1,6 @@
 // FitzFrontend/app/(tabs)/home.tsx
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpacity } from 'react-native'; // Added TouchableOpacity for potential image tap
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, Image, TouchableOpacity } from 'react-native';
 import { Colors } from '../../constants/Colours';
 import Card from '../../components/Card';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,7 +20,6 @@ export default function HomeScreen() {
   const displayName = user?.displayName || user?.email?.split('@')[0] || 'Guest';
   // Determine profile image URL, prioritizing photoURL from Firebase Auth, then Firestore (if you fetch it and store it in user object later), then a generated avatar
   const profileImageUrl = user?.photoURL || (user && `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=A020F0&color=FFFFFF&size=100`);
-
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -86,8 +85,8 @@ export default function HomeScreen() {
           </View>
           <View style={styles.lineBreak} />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={styles.secondaryText}>Current: 78 kg</Text>
-            <Text style={styles.secondaryText}>Target: 75 kg</Text>
+            <Text style={styles.secondaryText}>Current: {user?.currentWeight ? `${user.currentWeight} kg` : 'N/A'}</Text>
+            <Text style={styles.secondaryText}>Target: {user?.targetWeight ? `${user.targetWeight} kg` : 'N/A'}</Text>
           </View>
         </Card>
 
