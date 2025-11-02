@@ -1,18 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator, Image, TouchableOpacity, Alert } from 'react-native';
+// FitzFrontend/app/(tabs)/dietary-plan.tsx
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator, Image, TouchableOpacity, Alert, RefreshControl } from 'react-native';
 import { Colors } from '../../constants/Colours';
 import Card from '../../components/Card';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router'; // Import useFocusEffect for re-fetching when screen is focused
+import AsyncStorage from '@react-native-async-storage/async-storage'; // To store/retrieve the plan locally
 
 // Define interfaces for meal and dietary plan structure
 interface MealItem {
   name: string;
   description: string;
-  calories: number;
-  protein: number;
-  carbs: number;
-  fats: number;
+  calories?: number; // Make optional if not always present or directly parsed
+  protein?: number;
+  carbs?: number;
+  fats?: number;
   image_url?: string;
 }
 
@@ -26,121 +28,165 @@ interface DailyPlan {
   };
 }
 
-// Dummy data for a dietary plan
-const dummyDietaryPlan: DailyPlan[] = [
-  {
-    day: "Monday",
-    meals: {
-      breakfast: {
-        name: "Oatmeal with Berries & Nuts",
-        description: "Hearty oats cooked with water/milk, topped with mixed berries, sliced almonds, and a drizzle of honey.",
-        calories: 350,
-        protein: 10,
-        carbs: 55,
-        fats: 12,
-        image_url: "https://images.unsplash.com/photo-1517431525-a13a00f27464?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
-      },
-      lunch: {
-        name: "Grilled Chicken Salad",
-        description: "Mixed greens, grilled chicken breast, cherry tomatoes, cucumber, bell peppers, light vinaigrette.",
-        calories: 450,
-        protein: 40,
-        carbs: 20,
-        fats: 20,
-        image_url: "https://images.unsplash.com/photo-1512850183-6d7990f42383?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
-      },
-      dinner: {
-        name: "Baked Salmon with Asparagus & Quinoa",
-        description: "Oven-baked salmon fillet, steamed asparagus, and a side of fluffy quinoa.",
-        calories: 550,
-        protein: 45,
-        carbs: 40,
-        fats: 25,
-        image_url: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
-      },
-      snacks: [
-        {
-          name: "Greek Yogurt with Blueberries",
-          description: "Plain Greek yogurt with fresh blueberries.",
-          calories: 150,
-          protein: 15,
-          carbs: 15,
-          fats: 2,
+// Helper to generate a placeholder image URL based on meal name
+const generateImageUrl = (mealName: string) => {
+  const query = encodeURIComponent(mealName + " food");
+  return `https://source.unsplash.com/featured/?${query}&${Math.random()}`; // Random for varied images
+};
+
+// Function to parse the AI's text response into the DailyPlan structure
+const parseAiPlanResponse = (aiTextResponse: string, numDays: number): DailyPlan[] => {
+  const parsedPlans: DailyPlan[] = [];
+  const daysOfWeek = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+  // Split the response into daily sections
+  // Look for "Day X:" or similar markers for each day
+  const daySections = aiTextResponse.split(/(Day \d+:|DAY \d+:)/i).filter(Boolean);
+
+  let currentDayIndex = 0;
+
+  for (let i = 0; i < daySections.length; i++) {
+    const sectionTitle = daySections[i];
+    if (sectionTitle.toLowerCase().startsWith('day')) {
+      // The actual content for the day is in the next section
+      const dayContent = daySections[i + 1] || '';
+      const dayName = daysOfWeek[currentDayIndex % 7]; // Cycle through days
+
+      const newDailyPlan: DailyPlan = {
+        day: dayName,
+        meals: {
+          breakfast: { name: 'N/A', description: 'No breakfast plan provided.' },
+          lunch: { name: 'N/A', description: 'No lunch plan provided.' },
+          dinner: { name: 'N/A', description: 'No dinner plan provided.' },
+          snacks: [],
         },
-        {
-          name: "Handful of Almonds",
-          description: "Approximately 1/4 cup of raw almonds.",
-          calories: 180,
-          protein: 6,
-          carbs: 6,
-          fats: 15,
-        }
-      ]
-    }
-  },
-  {
-    day: "Tuesday",
-    meals: {
-      breakfast: {
-        name: "Scrambled Eggs with Spinach & Whole Wheat Toast",
-        description: "Two scrambled eggs with sautéed spinach and one slice of whole wheat toast.",
-        calories: 300,
-        protein: 20,
-        carbs: 25,
-        fats: 12,
-        image_url: "https://images.unsplash.com/photo-1525990263304-434863c0a525?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
-      },
-      lunch: {
-        name: "Lentil Soup with Whole Grain Bread",
-        description: "Hearty lentil soup, rich in fiber and protein, served with a slice of whole grain bread.",
-        calories: 400,
-        protein: 20,
-        carbs: 60,
-        fats: 10,
-        image_url: "https://images.unsplash.com/photo-1608447040498-854746f33d76?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
-      },
-      dinner: {
-        name: "Turkey Stir-fry with Brown Rice",
-        description: "Lean ground turkey stir-fried with mixed vegetables (broccoli, carrots, snow peas) and soy sauce, served with brown rice.",
-        calories: 500,
-        protein: 40,
-        carbs: 50,
-        fats: 15,
-        image_url: "https://images.unsplash.com/photo-1546931557-ad6d193d5f57?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
-      },
-      snacks: [
-        {
-          name: "Apple Slices with Peanut Butter",
-          description: "One medium apple sliced with 2 tablespoons of natural peanut butter.",
-          calories: 250,
-          protein: 8,
-          carbs: 25,
-          fats: 15,
-        }
-      ]
+      };
+
+      // Extract Breakfast
+      const breakfastMatch = dayContent.match(/Breakfast:\s*(.*?)(?=\n(?:Lunch|Dinner|Snacks|$))/is);
+      if (breakfastMatch && breakfastMatch[1]) {
+        const [name, description] = breakfastMatch[1].split(': ', 2);
+        newDailyPlan.meals.breakfast = {
+          name: name ? name.trim() : 'Breakfast',
+          description: description ? description.trim() : breakfastMatch[1].trim(),
+          image_url: generateImageUrl(name ? name.trim() : 'Breakfast'),
+        };
+      }
+
+      // Extract Lunch
+      const lunchMatch = dayContent.match(/Lunch:\s*(.*?)(?=\n(?:Dinner|Snacks|$))/is);
+      if (lunchMatch && lunchMatch[1]) {
+        const [name, description] = lunchMatch[1].split(': ', 2);
+        newDailyPlan.meals.lunch = {
+          name: name ? name.trim() : 'Lunch',
+          description: description ? description.trim() : lunchMatch[1].trim(),
+          image_url: generateImageUrl(name ? name.trim() : 'Lunch'),
+        };
+      }
+
+      // Extract Dinner
+      const dinnerMatch = dayContent.match(/Dinner:\s*(.*?)(?=\n(?:Snacks|$))/is);
+      if (dinnerMatch && dinnerMatch[1]) {
+        const [name, description] = dinnerMatch[1].split(': ', 2);
+        newDailyPlan.meals.dinner = {
+          name: name ? name.trim() : 'Dinner',
+          description: description ? description.trim() : dinnerMatch[1].trim(),
+          image_url: generateImageUrl(name ? name.trim() : 'Dinner'),
+        };
+      }
+
+      // Extract Snacks
+      const snacksMatch = dayContent.match(/Snacks:\s*(.*?)(?=\n(?:Workout Plan|$))/is);
+      if (snacksMatch && snacksMatch[1]) {
+        const snackLines = snacksMatch[1].split('\n').filter(line => line.trim().length > 0 && !line.includes('Workout Plan'));
+        newDailyPlan.meals.snacks = snackLines.map(line => {
+          const [name, description] = line.replace(/^- /, '').split(': ', 2);
+          return {
+            name: name ? name.trim() : 'Snack',
+            description: description ? description.trim() : line.trim(),
+            image_url: generateImageUrl(name ? name.trim() : 'Snack'),
+          };
+        });
+      }
+
+      parsedPlans.push(newDailyPlan);
+      currentDayIndex++;
+      i++; // Skip the content section as it's processed
+      if (parsedPlans.length >= numDays) break; // Stop if we have enough days
     }
   }
-  // Add more days as needed for a fuller dummy plan
-];
 
+  // Fallback if parsing fails or plan is incomplete
+  while (parsedPlans.length < numDays) {
+    const dayName = daysOfWeek[parsedPlans.length % 7];
+    parsedPlans.push({
+      day: dayName,
+      meals: {
+        breakfast: { name: 'No Plan', description: 'Still working on this meal!' },
+        lunch: { name: 'No Plan', description: 'Still working on this meal!' },
+        dinner: { name: 'No Plan', description: 'Still working on this meal!' },
+        snacks: [],
+      },
+    });
+  }
+
+  return parsedPlans;
+};
+
+
+// Backend API URL (adjust if your backend is not on localhost:5000)
+const API_BASE_URL = 'http://localhost:5000/api'; // Or your deployed backend URL
 
 export default function DietaryPlanScreen() {
   const [dietPlan, setDietPlan] = useState<DailyPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedDayIndex, setSelectedDayIndex] = useState(0); // For navigating between days
+  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    const fetchDietPlan = () => {
-      setLoading(true);
-      setError(null);
-      setTimeout(() => {
-        setDietPlan(dummyDietaryPlan);
+  // This will store the raw AI response text and the parameters used to generate it
+  const [lastGeneratedPlanRaw, setLastGeneratedPlanRaw] = useState<{ text: string, params: any } | null>(null);
+
+  const fetchDietPlan = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const storedPlan = await AsyncStorage.getItem('lastGeneratedDietPlan');
+      if (storedPlan) {
+        const { text, params } = JSON.parse(storedPlan);
+        const parsedPlan = parseAiPlanResponse(text, params.DaysPerWeek || 5);
+        setDietPlan(parsedPlan);
+        setLastGeneratedPlanRaw({ text, params });
         setLoading(false);
-      }, 1500); // Simulate network delay
-    };
-    fetchDietPlan();
+        return;
+      }
+
+      // If no stored plan, you might want to prompt the user to generate one
+      // or fetch a default/example plan if available. For now, we'll show no plan.
+      setDietPlan([]);
+      setLoading(false);
+
+    } catch (e: any) {
+      console.error('Failed to load stored diet plan:', e);
+      setError('Failed to load stored plan.');
+      setDietPlan([]);
+      setLoading(false);
+    } finally {
+      setRefreshing(false);
+    }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchDietPlan(); // Refetch when the screen comes into focus
+    }, [fetchDietPlan])
+  );
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchDietPlan();
+  }, [fetchDietPlan]);
+
 
   const renderMealItem = (meal: MealItem, mealType: string) => (
     <View style={styles.mealItemContainer}>
@@ -155,9 +201,12 @@ export default function DietaryPlanScreen() {
         <Text style={styles.mealType}>{mealType}</Text>
         <Text style={styles.mealName}>{meal.name}</Text>
         <Text style={styles.mealDescription}>{meal.description}</Text>
-        <Text style={styles.mealMacros}>
-          {meal.calories} kcal • P:{meal.protein}g C:{meal.carbs}g F:{meal.fats}g
-        </Text>
+        {/* Only show macros if available (not directly from AI text parsing yet) */}
+        {(meal.calories || meal.protein || meal.carbs || meal.fats) ? (
+          <Text style={styles.mealMacros}>
+            {meal.calories || '?'} kcal • P:{meal.protein || '?'}g C:{meal.carbs || '?'}g F:{meal.fats || '?'}g
+          </Text>
+        ) : null}
       </View>
     </View>
   );
@@ -180,6 +229,9 @@ export default function DietaryPlanScreen() {
           <Ionicons name="alert-circle-outline" size={32} color={Colors.red} />
           <Text style={styles.errorText}>{error}</Text>
           <Text style={styles.smallText}>Failed to load dietary plan.</Text>
+          <TouchableOpacity style={styles.generatePlanButton} onPress={() => router.push('./workouts')}>
+            <Text style={styles.generatePlanButtonText}>Generate New Plan</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -189,10 +241,20 @@ export default function DietaryPlanScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container}>
+      <ScrollView
+        style={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.accent}
+            titleColor={Colors.accent}
+          />
+        }
+      >
         <Text style={styles.header}>Your Dietary Plan</Text>
 
-        {dietPlan.length === 0 ? (
+        {dietPlan.length === 0 || !currentDayPlan ? (
           <Card style={styles.noPlanCard}>
             <Ionicons name="restaurant-outline" size={40} color={Colors.secondaryText} />
             <Text style={styles.noPlanText}>No dietary plan found.</Text>
@@ -222,8 +284,11 @@ export default function DietaryPlanScreen() {
               <View>
                 <Card style={styles.daySummaryCard}>
                   <Text style={styles.dayTitle}>{currentDayPlan.day}'s Meals</Text>
-                  <Text style={styles.targetInfo}>Target: Build Muscle (Example)</Text>
-                  {/* Potentially show total macros for the day here */}
+                  {lastGeneratedPlanRaw?.params && (
+                    <Text style={styles.targetInfo}>
+                      Goal: {lastGeneratedPlanRaw.params.CurrentWeightKg}kg to {lastGeneratedPlanRaw.params.TargetWeightKg}kg in {lastGeneratedPlanRaw.params.DaysPerWeek} days/week workouts
+                    </Text>
+                  )}
                 </Card>
 
                 <Card>
@@ -249,6 +314,10 @@ export default function DietaryPlanScreen() {
                     ))}
                   </Card>
                 )}
+                <TouchableOpacity style={styles.generatePlanButton} onPress={() => router.push('./workouts')}>
+                    <Ionicons name="add-circle-outline" size={24} color={Colors.primaryText} />
+                    <Text style={styles.generatePlanButtonText}>Generate New Plan</Text>
+                </TouchableOpacity>
               </View>
             )}
           </>
@@ -319,16 +388,21 @@ const styles = StyleSheet.create({
     marginTop: 15,
   },
   generatePlanButton: {
-    backgroundColor: Colors.accent,
+    backgroundColor: Colors.accent, // Changed to accent for consistency
     borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 20,
     marginTop: 20,
+    marginHorizontal: 16, // Added for consistency
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   generatePlanButtonText: {
     color: Colors.primaryText,
     fontSize: 16,
     fontWeight: 'bold',
+    marginLeft: 8,
   },
   // Day Selector Styles
   daySelectorContainer: {
