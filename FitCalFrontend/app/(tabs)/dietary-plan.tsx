@@ -134,8 +134,8 @@ const parseAiPlanResponse = (aiTextResponse: string, numDays: number): DailyPlan
 };
 
 
-// Backend API URL 
-const API_BASE_URL = 'http://localhost:5089/api'; // Or your deployed backend URL
+// Backend API URL (adjust if your backend is not on localhost:5000)
+const API_BASE_URL = 'http://localhost:5000/api'; // Or your deployed backend URL
 
 export default function DietaryPlanScreen() {
   const [dietPlan, setDietPlan] = useState<DailyPlan[]>([]);
