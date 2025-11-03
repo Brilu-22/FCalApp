@@ -9,7 +9,7 @@ import { useUser } from '../_layout'; // Import useUser to get current/target we
 import AsyncStorage from '@react-native-async-storage/async-storage'; // To store the generated plan
 
 // Backend API URL
-const API_BASE_URL = 'http://localhost:5089/api'; 
+const API_BASE_URL = 'http://localhost:5089/api/'; 
 
 const humanSilhouetteImage = 'https://via.placeholder.com/300x500/0D0D0D/FFFFFF?text=Human+Anatomy'; // Placeholder
 
